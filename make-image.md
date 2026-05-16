@@ -28,10 +28,12 @@ podman run --rm -it \
 ```
 setenv ipaddr 192.168.1.254
 setenv netmask 255.255.255.0
+setenv serverip 192.168.1.10
 
 rtk network on
 rtk 10g 0 fiber10g
 
-tftpboot 0x82000000 openwrt-realtek-rtl931x-xikestor_sks8300-12x-v2-initramfs-kernel.bin
-bootm 0x82000000
+upgrade runtime1 openwrt-realtek-rtl931x-xikestor_sks8300-12x-v2-squashfs-firmware.bix
+upgrade runtime2 openwrt-realtek-rtl931x-xikestor_sks8300-12x-v2-squashfs-firmware.bix
+reset
 ```

@@ -343,11 +343,11 @@ cat > target/linux/realtek/dts/rtl9313_xikestor_sks8300-12x-v2.dts << 'EOF'
                                 read-only;
                         };
 
-                        /* V2: firmware at 0x600000 (U-Boot location) instead of 0x200000 */
+                        /* V2: RUNTIME1 as firmware partition (active boot, 13MB) */
                         partition@600000 {
                                 compatible = "fixed-partitions";
                                 label = "firmware";
-                                reg = <0x600000 0x1a00000>;
+                                reg = <0x600000 0xd00000>;
                                 #address-cells = <1>;
                                 #size-cells = <1>;
 
@@ -358,8 +358,14 @@ cat > target/linux/realtek/dts/rtl9313_xikestor_sks8300-12x-v2.dts << 'EOF'
 
                                 partition@500000 {
                                         label = "rootfs";
-                                        reg = <0x500000 0x1500000>;
+                                        reg = <0x500000 0x800000>;
                                 };
+                        };
+
+                        /* V2: RUNTIME2 as backup partition (13MB) */
+                        partition@1300000 {
+                                label = "runtime2";
+                                reg = <0x1300000 0xd00000>;
                         };
                 };
         };
