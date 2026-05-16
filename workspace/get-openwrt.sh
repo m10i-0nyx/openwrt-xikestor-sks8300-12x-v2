@@ -57,6 +57,7 @@ cat > target/linux/realtek/dts/rtl9313_xikestor_sks8300-12x-v2.dts << 'EOF'
 
         chosen {
                 stdout-path = "serial0:115200n8";
+                bootargs = "loglevel=4";
         };
 
         keys {
