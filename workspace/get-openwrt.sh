@@ -350,14 +350,12 @@ cat > target/linux/realtek/dts/rtl9313_xikestor_sks8300-12x-v2.dts << 'EOF'
                         partition@160000 {
                                 label = "jffs2-cfg";
                                 reg = <0x160000 0xa0000>;
-                                read-only;
                         };
 
                         /* JFFS2_LOG: 0x200000-0x5fffff (4MB) */
                         partition@200000 {
                                 label = "jffs2-log";
                                 reg = <0x200000 0x400000>;
-                                read-only;
                         };
 
                         /* RUNTIME1: 0x600000-0x12fffff (13MB) */
