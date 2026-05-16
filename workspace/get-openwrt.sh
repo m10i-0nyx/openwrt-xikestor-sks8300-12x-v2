@@ -313,15 +313,17 @@ cat > target/linux/realtek/dts/rtl9313_xikestor_sks8300-12x-v2.dts << 'EOF'
                         #address-cells = <1>;
                         #size-cells = <1>;
 
+                        /* LOADER: 0x000000-0x13ffff (1.25MB) */
                         partition@0 {
                                 label = "u-boot";
-                                reg = <0x0 0x100000>;
+                                reg = <0x0 0x140000>;
                                 read-only;
                         };
 
-                        partition@100000 {
+                        /* BDINFO: 0x140000-0x14ffff (64KB) */
+                        partition@140000 {
                                 label = "board-info";
-                                reg = <0x100000 0x30000>;
+                                reg = <0x140000 0x10000>;
                                 read-only;
 
                                 nvmem-layout {
@@ -337,16 +339,31 @@ cat > target/linux/realtek/dts/rtl9313_xikestor_sks8300-12x-v2.dts << 'EOF'
                                 };
                         };
 
-                        partition@130000 {
-                                label = "syslog";
-                                reg = <0x130000 0xd0000>;
+                        /* SYSINFO: 0x150000-0x15ffff (64KB) */
+                        partition@150000 {
+                                label = "sysinfo";
+                                reg = <0x150000 0x10000>;
                                 read-only;
                         };
 
-                        /* V2: RUNTIME1 as firmware partition (active boot, 13MB) */
+                        /* JFFS2_CFG: 0x160000-0x1fffff (640KB) */
+                        partition@160000 {
+                                label = "jffs2-cfg";
+                                reg = <0x160000 0xa0000>;
+                                read-only;
+                        };
+
+                        /* JFFS2_LOG: 0x200000-0x5fffff (4MB) */
+                        partition@200000 {
+                                label = "jffs2-log";
+                                reg = <0x200000 0x400000>;
+                                read-only;
+                        };
+
+                        /* RUNTIME1: 0x600000-0x12fffff (13MB) */
                         partition@600000 {
                                 compatible = "fixed-partitions";
-                                label = "firmware";
+                                label = "runtime1";
                                 reg = <0x600000 0xd00000>;
                                 #address-cells = <1>;
                                 #size-cells = <1>;
@@ -362,7 +379,7 @@ cat > target/linux/realtek/dts/rtl9313_xikestor_sks8300-12x-v2.dts << 'EOF'
                                 };
                         };
 
-                        /* V2: RUNTIME2 as backup partition (13MB) */
+                        /* RUNTIME2: 0x1300000-0x1ffffff (13MB) */
                         partition@1300000 {
                                 label = "runtime2";
                                 reg = <0x1300000 0xd00000>;
