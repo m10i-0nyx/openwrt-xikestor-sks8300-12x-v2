@@ -358,6 +358,22 @@ cat > target/linux/realtek/dts/rtl9313_xikestor_sks8300-12x-v2.dts << 'EOF'
                                 reg = <0x200000 0x400000>;
                         };
 
+                        /*
+                         * NOTE: "rootfs_data" is declared BEFORE runtime1 so that
+                         * the explicit 13MB partition is registered ahead of the
+                         * mtdsplit_squashfs auto-generated "rootfs_data" inside
+                         * runtime1.rootfs. fstools picks the FIRST match in
+                         * /proc/mtd, ensuring the 13MB partition becomes /overlay.
+                         * Trade-off: the runtime2 dual-bank firmware slot is
+                         * sacrificed (no fallback boot image).
+                         */
+
+                        /* ROOTFS_DATA (former RUNTIME2): 0x1300000-0x1ffffff (13MB) */
+                        partition@1300000 {
+                                label = "rootfs_data";
+                                reg = <0x1300000 0xd00000>;
+                        };
+
                         /* RUNTIME1: 0x600000-0x12fffff (13MB) */
                         partition@600000 {
                                 compatible = "fixed-partitions";
@@ -375,12 +391,6 @@ cat > target/linux/realtek/dts/rtl9313_xikestor_sks8300-12x-v2.dts << 'EOF'
                                         label = "rootfs";
                                         reg = <0x500000 0x800000>;
                                 };
-                        };
-
-                        /* RUNTIME2: 0x1300000-0x1ffffff (13MB) */
-                        partition@1300000 {
-                                label = "runtime2";
-                                reg = <0x1300000 0xd00000>;
                         };
                 };
         };
@@ -455,13 +465,13 @@ if [ ! -f "$DTS_MK" ]; then
     mkdir -p target/linux/realtek/dts
     cat > "$DTS_MK" << 'DTSMAKEFILE'
 dtb-y += \
-	rtl9313_xikestor_sks8300-12x-v2.dtb
+    rtl9313_xikestor_sks8300-12x-v2.dtb
 
 targets += $(dtb-y)
 DTSMAKEFILE
 fi
 if ! grep -q "rtl9313_xikestor_sks8300-12x-v2" "$DTS_MK"; then
-    sed -i '/^dtb-y/a\ 	rtl9313_xikestor_sks8300-12x-v2.dtb' "$DTS_MK"
+    sed -i '/^dtb-y/a\     rtl9313_xikestor_sks8300-12x-v2.dtb' "$DTS_MK"
 fi
 
 # 2. rtl931x.mk に V2 定義を追加
@@ -743,6 +753,106 @@ with open('tools/firmware-utils/patches/101-cmake-xikestor-bix-header.patch', 'w
     f.writelines(lines)
 print("Patch 101 created")
 PYEOF
+
+# === jffs2-cfg を /etc へ overlay マウントする preinit フック ===
+# /lib/preinit/85_mount_jffs2_cfg_overlay を base-files に追加
+# - mount_root の後、procd/init 起動前に動作
+# - jffs2-cfg パーティションが存在する場合のみ動作 (他デバイス影響なし)
+# - lowerdir=/etc, upperdir/workdir=jffs2-cfg 上 で /etc に overlay マウント
+mkdir -p target/linux/realtek/base-files/lib/preinit
+cat > target/linux/realtek/base-files/lib/preinit/85_mount_jffs2_cfg_overlay << 'PREINITEOF'
+#!/bin/sh
+# Overlay-mount the "jffs2-cfg" MTD partition onto /etc.
+# Persists only diffs of /etc into a dedicated 640KB JFFS2 partition.
+
+do_mount_jffs2_cfg_overlay() {
+    local idx mtdblock mtdchar mp upper work
+
+    idx=$(awk -F: '/"jffs2-cfg"/ { sub("mtd","",$1); print $1; exit }' /proc/mtd)
+    [ -n "$idx" ] || return 0
+
+    mtdblock="/dev/mtdblock${idx}"
+    mtdchar="/dev/mtd${idx}"
+    mp="/tmp/jffs2-cfg"
+
+    [ -b "$mtdblock" ] || return 0
+
+    mkdir -p "$mp"
+
+    # Try to mount existing JFFS2; on failure erase and retry once.
+    if ! mount -t jffs2 -o sync,noatime "$mtdblock" "$mp" 2>/dev/null; then
+        echo "jffs2-cfg: erase & format $mtdchar"
+        if command -v mtd >/dev/null 2>&1; then
+            mtd erase "$mtdchar" >/dev/null 2>&1
+        fi
+        mount -t jffs2 -o sync,noatime "$mtdblock" "$mp" || {
+            echo "jffs2-cfg: mount failed, skip /etc overlay"
+            return 1
+        }
+    fi
+
+    upper="$mp/upper"
+    work="$mp/work"
+    mkdir -p "$upper" "$work"
+
+    # Overlay /etc: lower = current /etc (rootfs+rootfs_data view),
+    # upper/work = on jffs2-cfg. Only diffs are persisted to jffs2-cfg.
+    mount -t overlay overlay-etc \
+        -o "lowerdir=/etc,upperdir=$upper,workdir=$work" \
+        /etc || {
+        echo "jffs2-cfg: /etc overlay failed"
+        umount "$mp" 2>/dev/null
+        return 1
+    }
+
+    echo "jffs2-cfg: /etc overlay mounted (upper=$upper)"
+}
+
+boot_hook_add preinit_main do_mount_jffs2_cfg_overlay
+PREINITEOF
+chmod 0755 target/linux/realtek/base-files/lib/preinit/85_mount_jffs2_cfg_overlay
+
+# === jffs2-log を /var/log (= /tmp/log) へ直接マウントする preinit フック ===
+# - /var は OpenWrt で /tmp への symlink のためマウント先は /tmp/log
+# - /var/log は通常 tmpfs 上で空 → overlay 不要、JFFS2 を直接マウント
+# - jffs2-cfg と同じく、パーティションが無いデバイスでは何もしない
+cat > target/linux/realtek/base-files/lib/preinit/86_mount_jffs2_log << 'PREINITEOF'
+#!/bin/sh
+# Mount the "jffs2-log" MTD partition as /var/log to persist logs across reboot.
+
+do_mount_jffs2_log() {
+    local idx mtdblock mtdchar mp
+
+    idx=$(awk -F: '/"jffs2-log"/ { sub("mtd","",$1); print $1; exit }' /proc/mtd)
+    [ -n "$idx" ] || return 0
+
+    mtdblock="/dev/mtdblock${idx}"
+    mtdchar="/dev/mtd${idx}"
+    # /var -> /tmp symlink in OpenWrt; mount on real path /tmp/log
+    mp="/tmp/log"
+
+    [ -b "$mtdblock" ] || return 0
+
+    mkdir -p "$mp"
+
+    # Try to mount existing JFFS2; on failure erase and retry once.
+    if ! mount -t jffs2 -o sync,noatime "$mtdblock" "$mp" 2>/dev/null; then
+        echo "jffs2-log: erase & format $mtdchar"
+        if command -v mtd >/dev/null 2>&1; then
+            mtd erase "$mtdchar" >/dev/null 2>&1
+        fi
+        mount -t jffs2 -o sync,noatime "$mtdblock" "$mp" || {
+            echo "jffs2-log: mount failed, /var/log stays on tmpfs"
+            return 1
+        }
+    fi
+
+    echo "jffs2-log: mounted at /var/log"
+}
+
+boot_hook_add preinit_main do_mount_jffs2_log
+PREINITEOF
+chmod 0755 target/linux/realtek/base-files/lib/preinit/86_mount_jffs2_log
 
 echo "=== セットアップ完了 ==="
 grep -r "sks8300-12x-v2" target/linux/realtek/
