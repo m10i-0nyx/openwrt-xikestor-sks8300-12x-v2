@@ -38,7 +38,7 @@ setenv serverip 192.168.1.10
 rtk network on
 rtk 10g 0 fiber10g
 
-upgrade runtime1 openwrt-realtek-rtl931x-xikestor_sks8300-12x-v2-squashfs-firmware.bix
+upgrade runtimeforce openwrt-realtek-rtl931x-xikestor_sks8300-12x-v2-squashfs-firmware.bix
 reset
 ```
 
